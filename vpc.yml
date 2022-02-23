@@ -17,6 +17,22 @@ Parameters:
     Description: "Cidr block for subnet3"
     Type: String
     Default: "10.0.2.0/24"
+  Subnet1AZ:
+    Description: "Available zone for subnet1"
+    Type: String
+    Default: "us-east-1a"
+  Subnet2AZ:
+    Description: "Available zone for subnet2"
+    Type: String
+    Default: "us-east-1b"
+  Subnet3AZ:
+    Description: "Available zone for subnet3"
+    Type: String
+    Default: "us-east-1c"
+  DstCidrBlock:
+    Description: "Destination CIDR Block"
+    Type: String
+    Default: "0.0.0.0/0"
 
 Resources:
   myVPC:
@@ -37,7 +53,7 @@ Resources:
       VpcId:
         Ref: myVPC
       CidrBlock: !Ref Subnet1CidrBlock
-      AvailabilityZone: "us-east-1a"
+      AvailabilityZone: !Ref Subnet1AZ
       Tags:
       - Key: Name
         Value: !Ref AWS::StackName
@@ -47,7 +63,7 @@ Resources:
       VpcId:
         Ref: myVPC
       CidrBlock: !Ref Subnet2CidrBlock
-      AvailabilityZone: "us-east-1b"
+      AvailabilityZone: !Ref Subnet2AZ
       Tags:
       - Key: Name
         Value: !Ref AWS::StackName
@@ -57,7 +73,7 @@ Resources:
       VpcId:
         Ref: myVPC
       CidrBlock: !Ref Subnet3CidrBlock
-      AvailabilityZone: "us-east-1c"
+      AvailabilityZone: !Ref Subnet3AZ
       Tags:
       - Key: Name
         Value: !Ref AWS::StackName
@@ -113,7 +129,7 @@ Resources:
     Properties:
        RouteTableId:
          Ref: myRouteTable
-       DestinationCidrBlock: 0.0.0.0/0
+       DestinationCidrBlock: !Ref DstCidrBlock
        GatewayId:
          Ref: myInternetGateway
 
