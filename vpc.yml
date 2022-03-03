@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CSYE 6225 a03
+Description: CSYE 6225
 Parameters:
   VpcCidrBlock:
     Description: "Cidr block for vpc"
@@ -33,6 +33,13 @@ Parameters:
     Description: "Destination CIDR Block"
     Type: String
     Default: "0.0.0.0/0"
+  AmiId:
+    Description: "AMI ID"
+    Type: String
+  KeyPair:
+    Description: "Key pair name"
+    Type: String
+    Default: "aws"
 
 Resources:
   myVPC:
@@ -127,11 +134,68 @@ Resources:
     Type: AWS::EC2::Route
     # DependsOn: GatewayToInternet
     Properties:
-       RouteTableId:
-         Ref: myRouteTable
-       DestinationCidrBlock: !Ref DstCidrBlock
-       GatewayId:
-         Ref: myInternetGateway
+      RouteTableId:
+        Ref: myRouteTable
+      DestinationCidrBlock: !Ref DstCidrBlock
+      GatewayId:
+        Ref: myInternetGateway
+  
+  # Security Group
+  myInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Web app 22 80 443 8000
+      VpcId:
+        Ref: myVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 8080
+        ToPort: 8080
+        CidrIp: 0.0.0.0/0
+      # SecurityGroupEgress:
+      # - IpProtocol: tcp
+      #   FromPort: 80
+      #   ToPort: 80
+      #   CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: !Ref AWS::StackName
+  
+  myEc2Instance:
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId: !Ref AmiId
+      KeyName: !Ref KeyPair
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet: 
+            - Ref: myInstanceSecurityGroup
+          SubnetId: 
+            Ref: mySubnet1
+      BlockDeviceMappings: 
+        - DeviceName: "/dev/xvda"
+          Ebs: 
+            VolumeType: "gp2"
+            DeleteOnTermination: "true"
+            VolumeSize: "20"
+      InstanceType: "t2.micro"
+      DisableApiTermination: "true"
+      Tags:
+      - Key: Name
+        Value: !Ref AWS::StackName
 
 Outputs:
   VpcId:
@@ -152,3 +216,9 @@ Outputs:
   RouteTableId:
     Description: The Route Table ID
     Value: !Ref myRouteTable
+  InstanceSecurityGroupId:
+    Description: Instance security group ID
+    Value: !Ref myInstanceSecurityGroup
+  Ec2InstanceId:
+    Description: Ec2 instance ID
+    Value: !Ref myEc2Instance
