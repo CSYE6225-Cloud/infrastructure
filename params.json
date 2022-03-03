@@ -1,0 +1,42 @@
+[
+  {
+    "ParameterKey": "VpcCidrBlock",
+    "ParameterValue": "173.10.0.0/16"
+  },
+  {
+    "ParameterKey": "Subnet1CidrBlock",
+    "ParameterValue": "173.10.0.0/24"
+  },
+  {
+    "ParameterKey": "Subnet2CidrBlock",
+    "ParameterValue": "173.10.1.0/24"
+  },
+  {
+    "ParameterKey": "Subnet3CidrBlock",
+    "ParameterValue": "173.10.2.0/24"
+  },
+  {
+    "ParameterKey": "Subnet1AZ",
+    "ParameterValue": "us-east-1a"
+  },
+  {
+    "ParameterKey": "Subnet2AZ",
+    "ParameterValue": "us-east-1b"
+  },
+  {
+    "ParameterKey": "Subnet3AZ",
+    "ParameterValue": "us-east-1c"
+  },
+  {
+    "ParameterKey": "DstCidrBlock",
+    "ParameterValue": "0.0.0.0/0"
+  },
+  {
+    "ParameterKey": "AmiId",
+    "ParameterValue": "ami-0ef4934d1bdf69a9f"
+  },
+  {
+    "ParameterKey": "KeyPair",
+    "ParameterValue": "aws"
+  }
+]
