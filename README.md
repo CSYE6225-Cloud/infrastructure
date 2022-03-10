@@ -44,3 +44,9 @@ aws ec2 modify-instance-attribute \
 ```
 
 `aws cloudformation delete-stack --stack-name myVPC`
+
+## delete all objects
+`aws s3 rm s3://bucket-name --recursive`
+
+## delete all s3 resources
+`aws s3 rm s3://bucket-name --recursive`

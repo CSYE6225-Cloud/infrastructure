@@ -1,6 +1,10 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: CSYE 6225
 Parameters:
+  Domain:
+    Description: "tld domain"
+    Type: String
+    Default: ""
   VpcCidrBlock:
     Description: "Cidr block for vpc"
     Type: String
@@ -8,15 +12,27 @@ Parameters:
   Subnet1CidrBlock:
     Description: "Cidr block for subnet1"
     Type: String
-    Default: "10.0.0.0/24"
+    Default: "10.0.1.0/24"
   Subnet2CidrBlock:
     Description: "Cidr block for subnet2"
     Type: String
-    Default: "10.0.1.0/24"
+    Default: "10.0.2.0/24"
   Subnet3CidrBlock:
     Description: "Cidr block for subnet3"
     Type: String
-    Default: "10.0.2.0/24"
+    Default: "10.0.3.0/24"
+  PrivateSubnet1CidrBlock:
+    Description: "Cidr block for private subnet1"
+    Type: String
+    Default: "10.0.11.0/24"
+  PrivateSubnet2CidrBlock:
+    Description: "Cidr block for private subnet2"
+    Type: String
+    Default: "10.0.12.0/24"
+  PrivateSubnet3CidrBlock:
+    Description: "Cidr block for private subnet3"
+    Type: String
+    Default: "10.0.13.0/24"
   Subnet1AZ:
     Description: "Available zone for subnet1"
     Type: String
@@ -36,10 +52,60 @@ Parameters:
   AmiId:
     Description: "AMI ID"
     Type: String
+    Default: "ami-0ef4934d1bdf69a9f"
   KeyPair:
     Description: "Key pair name"
     Type: String
     Default: "aws"
+  EnvironmentType:
+    Description: "Environment type"
+    Type: String
+    Default: "dev"
+  DbName:
+    Description: "Database name"
+    Type: String
+    Default: "CSYE6225"
+  DbUsername:
+    Description: "Database username"
+    Type: String
+    Default: "csye6225"
+  DbPassword:
+    Description: "Database password"
+    Type: String
+  DbClass:
+    Description: "Database class"
+    Type: String
+    Default: "db.t2.micro"
+  DbStorage:
+    Description: "Database storage"
+    Type: String
+    Default: "20"
+  DbEngine:
+    Description: "Database engine"
+    Type: String
+    Default: MySQL
+  DbEngineVersion:
+    Description: "Database engine version"
+    Type: String
+    Default: "8.0.27"
+  DbBackupPeriod:
+    Description: "Database backup period"
+    Type: String
+    Default: 0
+  awsRegion:
+    Description: "aws region"
+    Type: String
+    Default: "us-east-1"
+  awsAccessKey:
+    Description: "aws access key"
+    Type: String
+  awsSecretKey:
+    Description: "aws secret key"
+    Type: String
+  
+Conditions:
+      UseProdCondition:
+        !Equals [!Ref EnvironmentType, dev]
 
 Resources:
   myVPC:
@@ -53,7 +119,7 @@ Resources:
       - Key: Name
         Value: !Ref AWS::StackName
 
-  # Subnet
+  # Public Subnet
   mySubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -84,7 +150,7 @@ Resources:
       Tags:
       - Key: Name
         Value: !Ref AWS::StackName
-  
+
   # Gateway
   myInternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -100,7 +166,7 @@ Resources:
       InternetGatewayId:
         Ref: myInternetGateway
 
-  # Route table
+  # Public Route table
   myRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -132,7 +198,9 @@ Resources:
         Ref: myRouteTable
   myRoute:
     Type: AWS::EC2::Route
-    # DependsOn: GatewayToInternet
+    DependsOn: 
+      - myInternetGateway
+      - AttachGateway
     Properties:
       RouteTableId:
         Ref: myRouteTable
@@ -140,7 +208,7 @@ Resources:
       GatewayId:
         Ref: myInternetGateway
   
-  # Security Group
+  # EC2 Instance Security Group
   myInstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -164,17 +232,78 @@ Resources:
         FromPort: 8080
         ToPort: 8080
         CidrIp: 0.0.0.0/0
-      # SecurityGroupEgress:
-      # - IpProtocol: tcp
-      #   FromPort: 80
-      #   ToPort: 80
-      #   CidrIp: 0.0.0.0/0
       Tags:
       - Key: Name
         Value: !Ref AWS::StackName
+
+  # Private Subnet
+  myPrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: myVPC
+      CidrBlock: !Ref PrivateSubnet1CidrBlock
+      AvailabilityZone: !Ref Subnet1AZ
+      Tags:
+      - Key: Name
+        Value: !Ref AWS::StackName
+  myPrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: myVPC
+      CidrBlock: !Ref PrivateSubnet2CidrBlock
+      AvailabilityZone: !Ref Subnet2AZ
+      Tags:
+      - Key: Name
+        Value: !Ref AWS::StackName
+  myPrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: myVPC
+      CidrBlock: !Ref PrivateSubnet3CidrBlock
+      AvailabilityZone: !Ref Subnet3AZ
+      Tags:
+      - Key: Name
+        Value: !Ref AWS::StackName
+
+  # Private Route Table
+  myPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:  
+        Ref: myVPC
+      Tags:
+      - Key: Name
+        Value: !Ref AWS::StackName
+  myPrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: myPrivateSubnet1
+      RouteTableId:
+        Ref: myPrivateRouteTable
+  myPrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: myPrivateSubnet2
+      RouteTableId:
+        Ref: myPrivateRouteTable
+  myPrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: myPrivateSubnet3
+      RouteTableId:
+        Ref: myPrivateRouteTable
   
   myEc2Instance:
     Type: AWS::EC2::Instance
+    DependsOn: 
+      - myDb
+      - s3Bucket
     Properties: 
       ImageId: !Ref AmiId
       KeyName: !Ref KeyPair
@@ -193,9 +322,174 @@ Resources:
             VolumeSize: "20"
       InstanceType: "t2.micro"
       DisableApiTermination: "true"
+      IamInstanceProfile: !Ref myWebAppS3InstanceProfile
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash
+            yum update -y
+
+            # config properties
+            cat << EOF > /usr/local/etc/application.properties
+            spring.jpa.hibernate.ddl-auto=none
+            spring.datasource.url=jdbc:mysql://${myDb.Endpoint.Address}:3306/CSYE6225
+            spring.datasource.username=${DbUsername}
+            spring.datasource.password=${DbPassword}
+            spring.datasource.driver-class-name=com.mysql.jdbc.Driver
+            spring.jpa.hibernate.naming.physical-strategy=org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+            logging.level.org.springframework=DEBUG
+            logging.file.name=/var/local/log/webapp.log
+            logging.pattern.file= %d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%
+            server.port=8080
+            aws.access-key-id=${awsAccessKey}
+            aws.secret-access-key=${awsSecretKey}
+            aws.region=${awsRegion}
+            aws.bucket-name=${s3Bucket}
+            spring.sql.init.mode=always
+            spring.sql.init.schema-locations=file:///usr/local/etc/schema.sql
+            EOF
+            chown webapp:webapp /usr/local/etc/application.properties
+            chmod 644 /usr/local/etc/application.properties
+            mkdir /var/local/log
+
+            systemctl daemon-reload
+            systemctl enable webapp
+            systemctl start webapp
       Tags:
       - Key: Name
         Value: !Ref AWS::StackName
+
+  s3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join 
+        - '.'
+        - - !Select [2, !Split ['/', !Ref AWS::StackId]]
+          - !If [UseProdCondition, 'dev', 'prod']
+          - !Ref Domain
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'AES256'
+      LifecycleConfiguration:
+        Rules:
+          - Id: myTransitionRule
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      Tags:
+      - Key: Name
+        Value: !Ref AWS::StackName
+
+  # RDS Instance Security Group
+  myRdsInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: MySQL 3306
+      VpcId:
+        Ref: myVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 3306
+        ToPort: 3306
+        SourceSecurityGroupId: !Ref myInstanceSecurityGroup
+      Tags:
+      - Key: Name
+        Value: !Ref AWS::StackName
+
+  myRdsDBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: MySQL for CSYE6225
+      Family: mysql8.0
+      Tags:
+      - Key: Name
+        Value: !Ref AWS::StackName
+
+  myDbSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties: 
+      DBSubnetGroupDescription: csye6225 subnet group
+      SubnetIds: 
+        - !Ref myPrivateSubnet1
+        - !Ref myPrivateSubnet2
+      Tags: 
+        - Key: Name
+          Value: !Ref AWS::StackId
+  
+  myDb:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Ref DbName
+      DBName: !Ref DbName
+      DBInstanceClass: !Ref DbClass
+      AllocatedStorage: !Ref DbStorage
+      Engine: !Ref DbEngine
+      EngineVersion: !Ref DbEngineVersion
+      MasterUsername: !Ref DbUsername
+      MasterUserPassword: !Ref DbPassword
+      MultiAZ: False
+      PubliclyAccessible: False
+      DBSubnetGroupName: !Ref myDbSubnetGroup
+      VPCSecurityGroups: 
+        - !Ref myRdsInstanceSecurityGroup
+      BackupRetentionPeriod: !Ref DbBackupPeriod
+      Tags: 
+        - Key: Name
+          Value: !Ref AWS::StackName
+  
+  myWebAppS3Role: 
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "ec2.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Path: "/"
+      Tags: 
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  myWebAppS3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: WebAppS3
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 's3:GetObject'
+              - 's3:DeleteObject'
+              - 's3:PutObject'
+            Resource: 
+              - !Sub 
+                - 'arn:aws:s3:::${BUCKET_NAME}'
+                - BUCKET_NAME: !GetAtt s3Bucket.Arn
+              - !Sub 
+                - 'arn:aws:s3:::${BUCKET_NAME}/*'
+                - BUCKET_NAME: !GetAtt s3Bucket.Arn
+      Roles: 
+        - !Ref myWebAppS3Role
+
+  myWebAppS3InstanceProfile: 
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      Path: "/"
+      Roles: 
+        - !Ref myWebAppS3Role
 
 Outputs:
   VpcId:
@@ -222,3 +516,33 @@ Outputs:
   Ec2InstanceId:
     Description: Ec2 instance ID
     Value: !Ref myEc2Instance
+  PrivateSubnet1Id:
+    Description: The Private Subnet1 ID
+    Value: !Ref myPrivateSubnet1
+  PrivateSubnet2Id:
+    Description: The Private Subnet2 ID
+    Value: !Ref myPrivateSubnet2
+  PrivateSubnet3Id:
+    Description: The Private Subnet3 ID
+    Value: !Ref myPrivateSubnet3
+  PrivateRouteTableId:
+    Description: The Route Table ID
+    Value: !Ref myPrivateRouteTable
+  S3BucketId:
+    Description: S3 bucket ID
+    Value: !Ref s3Bucket
+  RdsSecurityGroupId:
+    Description: RDS security group ID
+    Value: !Ref myRdsInstanceSecurityGroup
+  RdsDbParameterGroupId:
+    Description: RDS DB parameter group ID
+    Value: !Ref myRdsDBParameterGroup
+  myDbSubnetGroupId:
+    Description: DB subnet group ID
+    Value: !Ref myDbSubnetGroup
+  myDbId:
+    Description: DB ID
+    Value: !Ref myDb
+  myWebAppS3RoleId:
+    Description: Web App S3 Role ID
+    Value: !Ref myWebAppS3Role
