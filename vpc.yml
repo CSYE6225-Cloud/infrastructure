@@ -96,12 +96,6 @@ Parameters:
     Description: "aws region"
     Type: String
     Default: "us-east-1"
-  awsAccessKey:
-    Description: "aws access key"
-    Type: String
-  awsSecretKey:
-    Description: "aws secret key"
-    Type: String
   
 Conditions:
       UseProdCondition:
@@ -341,8 +335,6 @@ Resources:
             logging.file.name=/var/local/log/webapp.log
             logging.pattern.file= %d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%
             server.port=8080
-            aws.access-key-id=${awsAccessKey}
-            aws.secret-access-key=${awsSecretKey}
             aws.region=${awsRegion}
             aws.bucket-name=${s3Bucket}
             spring.sql.init.mode=always
@@ -476,10 +468,10 @@ Resources:
               - 's3:PutObject'
             Resource: 
               - !Sub 
-                - 'arn:aws:s3:::${BUCKET_NAME}'
+                - '${BUCKET_NAME}'
                 - BUCKET_NAME: !GetAtt s3Bucket.Arn
               - !Sub 
-                - 'arn:aws:s3:::${BUCKET_NAME}/*'
+                - '${BUCKET_NAME}/*'
                 - BUCKET_NAME: !GetAtt s3Bucket.Arn
       Roles: 
         - !Ref myWebAppS3Role
