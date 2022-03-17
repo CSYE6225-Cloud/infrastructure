@@ -332,7 +332,6 @@ Resources:
             spring.datasource.driver-class-name=com.mysql.jdbc.Driver
             spring.jpa.hibernate.naming.physical-strategy=org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
             logging.level.org.springframework=DEBUG
-            logging.file.name=/var/local/log/webapp.log
             logging.pattern.file= %d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%
             server.port=8080
             aws.region=${awsRegion}
@@ -342,7 +341,6 @@ Resources:
             EOF
             chown webapp:webapp /usr/local/etc/application.properties
             chmod 644 /usr/local/etc/application.properties
-            mkdir /var/local/log
 
             systemctl daemon-reload
             systemctl enable webapp
@@ -417,6 +415,7 @@ Resources:
   
   myDb:
     Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
     Properties:
       DBInstanceIdentifier: !Ref DbName
       DBName: !Ref DbName
@@ -432,6 +431,7 @@ Resources:
       VPCSecurityGroups: 
         - !Ref myRdsInstanceSecurityGroup
       BackupRetentionPeriod: !Ref DbBackupPeriod
+      DBParameterGroupName: !Ref myRdsDBParameterGroup
       Tags: 
         - Key: Name
           Value: !Ref AWS::StackName
