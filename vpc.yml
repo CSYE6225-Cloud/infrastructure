@@ -92,14 +92,14 @@ Parameters:
     Description: "Database backup period"
     Type: String
     Default: 0
-  awsRegion:
-    Description: "aws region"
+  asgMin:
+    Description: "Auto scaling min"
     Type: String
-    Default: "us-east-1"
-  hostZoneId:
-    Description: "Host zone ID"
+    Default: "1"
+  asgMax:
+    Description: "Auto scaling max"
     Type: String
-    Default: "Z09168102C0BQK5DP9LKH" # 
+    Default: "5"
   
 Conditions:
       UseProdCondition:
@@ -397,7 +397,6 @@ Resources:
         - !Ref myWebAppS3Role
 
   # Auto scaling
-  # Load Balancer Security Group
   myLoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -436,11 +435,9 @@ Resources:
               DeleteOnTermination: true
               VolumeSize: 20
         InstanceType: t2.micro
-        # DisableApiTermination: true
+        DisableApiTermination: true
         IamInstanceProfile: 
           Arn: !GetAtt myWebAppS3InstanceProfile.Arn
-        # SecurityGroupIds:
-        #   - !Ref myInstanceSecurityGroup
         UserData:
           Fn::Base64:
             !Sub |
@@ -458,7 +455,7 @@ Resources:
               logging.level.org.springframework=DEBUG
               logging.pattern.file= %d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%
               server.port=8080
-              aws.region=${awsRegion}
+              aws.region=${AWS::Region}
               aws.bucket-name=${s3Bucket}
               spring.sql.init.mode=always
               spring.sql.init.schema-locations=file:///usr/local/etc/schema.sql
@@ -479,9 +476,9 @@ Resources:
       LaunchTemplate:
         LaunchTemplateId: !Ref asgLaunchTemplate
         Version: !GetAtt asgLaunchTemplate.LatestVersionNumber
-      MaxSize: '5' # 5
-      MinSize: '3' # 3
-      DesiredCapacity: '3' #3
+      MaxSize: !Ref asgMax
+      MinSize: !Ref asgMin
+      DesiredCapacity: !Ref asgMin
       VPCZoneIdentifier:
         - !Ref mySubnet1
         - !Ref mySubnet2
@@ -491,9 +488,8 @@ Resources:
         - !Ref Subnet2AZ
         - !Ref Subnet3AZ
       # HealthCheckGracePeriod: 90
-      # NewInstancesProtectedFromScaleIn: true # delete old instance first
-      # TerminationPolicies: OldestInstance, OldestLaunchConfiguration, NewestInstance, ClosestToNextInstanceHour, Default, OldestLaunchTemplate, and AllocationStrategy
-      # if there are no scaling in, it can still keep the instance new,
+      # TerminationPolicies: OldestInstance
+      # if there is no scaling in, it can still keep the instance new,
       # it must be greater than 86400
       # MaxInstanceLifetime: 86400
       TargetGroupARNs:
@@ -528,7 +524,9 @@ Resources:
       AdjustmentType: ChangeInCapacity
       AutoScalingGroupName: !Ref asgWebApp
       PolicyType: StepScaling
-      EstimatedInstanceWarmup: 300 # in seconds, use the value from the default cooldown period for the Auto Scaling group, if not provided
+      # in seconds, use the value from the default cooldown period
+      # for the Auto Scaling group, if not provided
+      EstimatedInstanceWarmup: 60
       StepAdjustments:
         - MetricIntervalLowerBound: 0
           ScalingAdjustment: 1
@@ -555,7 +553,7 @@ Resources:
       AdjustmentType: ChangeInCapacity
       AutoScalingGroupName: !Ref asgWebApp
       PolicyType: StepScaling
-      EstimatedInstanceWarmup: 300 # in seconds, use the value from the default cooldown period for the Auto Scaling group, if not provided
+      EstimatedInstanceWarmup: 60
       StepAdjustments:
         - MetricIntervalUpperBound: 0
           ScalingAdjustment: -1
@@ -606,7 +604,11 @@ Resources:
   myLoadBalancerDnsRecord:
     Type: AWS::Route53::RecordSet
     Properties:
-      HostedZoneId: !Ref hostZoneId
+      HostedZoneName: !Join
+                        - '.'
+                        - - !If [UseProdCondition, 'dev', 'prod']
+                          - !Ref Domain
+                          - ''
       Type: A
       Name: !Join
               - '.'
