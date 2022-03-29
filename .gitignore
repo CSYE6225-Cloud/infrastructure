@@ -1,3 +1,3 @@
 # log file
 *.log
-params.json
+*params.json
