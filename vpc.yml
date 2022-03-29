@@ -102,8 +102,8 @@ Parameters:
     Default: "5"
   
 Conditions:
-      UseProdCondition:
-        !Equals [!Ref EnvironmentType, dev]
+  UseProdCondition:
+    !Equals [!Ref EnvironmentType, dev]
 
 Resources:
   myVPC:
@@ -201,7 +201,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          SourceSecurityGroupId: !Ref myLoadBalancerSecurityGroup
+          CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: 8080
           ToPort: 8080
@@ -349,20 +349,23 @@ Resources:
         - Key: Name
           Value: !Ref AWS::StackName
   
-  myWebAppS3Role: 
+  myWebAppCodeDeployS3Role: 
     Type: AWS::IAM::Role
     Properties: 
+      RoleName: CodeDeployServiceRole
       AssumeRolePolicyDocument: 
         Version: "2012-10-17"
         Statement: 
-          - 
-            Effect: "Allow"
+          - Effect: "Allow"
             Principal: 
               Service: 
                 - "ec2.amazonaws.com"
+                - !Sub "codedeploy.${AWS::Region}.amazonaws.com"
             Action: 
               - "sts:AssumeRole"
       Path: "/"
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole'
       Tags: 
         - Key: Name
           Value: !Ref AWS::StackName
@@ -387,14 +390,35 @@ Resources:
                 - '${BUCKET_NAME}/*'
                 - BUCKET_NAME: !GetAtt s3Bucket.Arn
       Roles: 
-        - !Ref myWebAppS3Role
+        - !Ref myWebAppCodeDeployS3Role
+
+  myWebAppCodeDeployS3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: CodeDeploy-EC2-S3
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 's3:Get*'
+              - 's3:List*'
+            Resource: 
+              - !Sub 
+                - '${PREFIX}.${SUBDOMAIN}.${DOMAIN}/*'
+                - PREFIX: 'arn:aws:s3:::csye6225-webapp-codedeployment'
+                  SUBDOMAIN: !If [UseProdCondition, 'dev', 'prod']
+                  DOMAIN: !Ref Domain
+              - !Sub 'arn:aws:s3:::aws-codedeploy-${AWS::Region}/*'
+      Roles: 
+        - !Ref myWebAppCodeDeployS3Role
 
   myWebAppS3InstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Path: "/"
       Roles:
-        - !Ref myWebAppS3Role
+        - !Ref myWebAppCodeDeployS3Role
 
   # Auto scaling
   myLoadBalancerSecurityGroup:
@@ -463,9 +487,7 @@ Resources:
               chown webapp:webapp /usr/local/etc/application.properties
               chmod 644 /usr/local/etc/application.properties
 
-              systemctl daemon-reload
               systemctl enable webapp
-              systemctl start webapp
 
   asgWebApp:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -617,6 +639,39 @@ Resources:
       AliasTarget:
         HostedZoneId: !GetAtt loadBalancer.CanonicalHostedZoneID
         DNSName: !GetAtt loadBalancer.DNSName
+  
+  # code deploy
+  myCodeDeployApplication: 
+    Type: AWS::CodeDeploy::Application 
+    Properties:
+      ApplicationName: csye6225-webapp
+      ComputePlatform: Server
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+  
+  myDeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    DependsOn:
+      - myWebAppS3Policy
+    Properties:
+      ApplicationName: !Ref myCodeDeployApplication
+      DeploymentGroupName: csye6225-webapp-deployment
+      DeploymentStyle:
+        DeploymentType: IN_PLACE
+        DeploymentOption: WITHOUT_TRAFFIC_CONTROL
+      DeploymentConfigName: CodeDeployDefault.AllAtOnce
+      ServiceRoleArn: !GetAtt myWebAppCodeDeployS3Role.Arn
+      Ec2TagFilters:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-asg
+          Type: KEY_AND_VALUE
+      AutoRollbackConfiguration:
+        Enabled: 'true'
+        Events:
+          - DEPLOYMENT_FAILURE
+      AutoScalingGroups:
+        - !Ref asgWebApp
 
 Outputs:
   VpcId:
@@ -667,6 +722,6 @@ Outputs:
   myDbId:
     Description: DB ID
     Value: !Ref myDb
-  myWebAppS3RoleId:
+  myWebAppCodeDeployS3RoleId:
     Description: Web App S3 Role ID
-    Value: !Ref myWebAppS3Role
+    Value: !Ref myWebAppCodeDeployS3Role
