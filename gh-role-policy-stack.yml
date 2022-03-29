@@ -1,0 +1,95 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CSYE 6225
+Parameters:
+  Domain:
+    Description: "tld domain"
+    Type: String
+    Default: ""
+  EnvironmentType:
+    Description: "Environment type"
+    Type: String
+    Default: "dev"
+
+Conditions:
+  UseProdCondition:
+    !Equals [!Ref EnvironmentType, dev]
+
+Resources:
+  myGhUploadToS3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: GH-Upload-To-S3
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 's3:Get*'
+              - 's3:List*'
+              - 's3:PutObject'
+            Resource:
+              - !Sub 
+                - '${PREFIX}.${SUBDOMAIN}.${DOMAIN}'
+                - PREFIX: 'arn:aws:s3:::csye6225-webapp-codedeployment'
+                  SUBDOMAIN: !If [UseProdCondition, 'dev', 'prod']
+                  DOMAIN: !Ref Domain
+              - !Sub 
+                - '${PREFIX}.${SUBDOMAIN}.${DOMAIN}/*'
+                - PREFIX: 'arn:aws:s3:::csye6225-webapp-codedeployment'
+                  SUBDOMAIN: !If [UseProdCondition, 'dev', 'prod']
+                  DOMAIN: !Ref Domain
+      Roles: 
+        - !Ref myGhCodeDeployServiceRole
+      Users:
+        - ghactions-app
+  
+  myGhCodeDeployPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: GH-Code-Deploy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'codedeploy:RegisterApplicationRevision'
+              - 'codedeploy:GetApplicationRevision'
+            Resource: 
+              - !Sub 'arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:application:csye6225-webapp'
+          - Effect: Allow
+            Action:
+              - 'codedeploy:CreateDeployment'
+              - 'codedeploy:GetDeployment'
+            Resource: 
+              - '*'
+          - Effect: Allow
+            Action:
+              - 'codedeploy:GetDeploymentConfig'
+            Resource: 
+              - !Sub 'arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentconfig:CodeDeployDefault.OneAtATime'
+              - !Sub 'arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentconfig:CodeDeployDefault.HalfAtATime'
+              - !Sub 'arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentconfig:CodeDeployDefault.AllAtOnce'
+      Roles: 
+        - !Ref myGhCodeDeployServiceRole
+      Users:
+        - ghactions-app
+
+  myGhCodeDeployServiceRole: 
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: GhCodeDeployServiceRole
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: "Allow"
+            Principal: 
+              Service: 
+                - !Sub "codedeploy.${AWS::Region}.amazonaws.com"
+              AWS:
+                - !Ref AWS::AccountId
+            Action: 
+              - "sts:AssumeRole"
+      Path: "/"
+      Tags: 
+        - Key: Name
+          Value: !Ref AWS::StackName
