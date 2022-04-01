@@ -352,7 +352,7 @@ Resources:
   myWebAppCodeDeployS3Role: 
     Type: AWS::IAM::Role
     Properties: 
-      RoleName: CodeDeployServiceRole
+      RoleName: myWebAppInstanceRole
       AssumeRolePolicyDocument: 
         Version: "2012-10-17"
         Statement: 
@@ -360,12 +360,9 @@ Resources:
             Principal: 
               Service: 
                 - "ec2.amazonaws.com"
-                - !Sub "codedeploy.${AWS::Region}.amazonaws.com"
             Action: 
               - "sts:AssumeRole"
       Path: "/"
-      ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole'
       Tags: 
         - Key: Name
           Value: !Ref AWS::StackName
@@ -403,7 +400,7 @@ Resources:
             Action:
               - 's3:Get*'
               - 's3:List*'
-            Resource: 
+            Resource:
               - !Sub 
                 - '${PREFIX}.${SUBDOMAIN}.${DOMAIN}/*'
                 - PREFIX: 'arn:aws:s3:::csye6225-webapp-codedeployment'
@@ -419,6 +416,26 @@ Resources:
       Path: "/"
       Roles:
         - !Ref myWebAppCodeDeployS3Role
+
+  myCodeDeployServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CodeDeployServiceRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub "codedeploy.${AWS::Region}.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole'
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
 
   # Auto scaling
   myLoadBalancerSecurityGroup:
@@ -661,7 +678,7 @@ Resources:
         DeploymentType: IN_PLACE
         DeploymentOption: WITHOUT_TRAFFIC_CONTROL
       DeploymentConfigName: CodeDeployDefault.AllAtOnce
-      ServiceRoleArn: !GetAtt myWebAppCodeDeployS3Role.Arn
+      ServiceRoleArn: !GetAtt myCodeDeployServiceRole.Arn
       Ec2TagFilters:
         - Key: Name
           Value: !Sub ${AWS::StackName}-asg
