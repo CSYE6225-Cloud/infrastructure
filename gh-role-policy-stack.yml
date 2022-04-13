@@ -9,6 +9,26 @@ Parameters:
     Description: "Environment type"
     Type: String
     Default: "dev"
+  DeployGroupName:
+    Description: "Deploy Group Name"
+    Type: String
+    Default: "csye6225-webapp-deployment"
+  ApplicationName:
+    Description: "Application Name"
+    Type: String
+    Default: "csye6225-webapp"
+  S3BucketName:
+    Description: "S3 Bucket Name"
+    Type: String
+    Default: "csye6225-webapp-codedeployment"
+  UserName:
+    Description: "User Name"
+    Type: String
+    Default: "ghactions-app"
+  LambdaFunctionName:
+    Description: "Lambda Function Name"
+    Type: String
+    Default: "user-create-verification"
 
 Conditions:
   UseProdCondition:
@@ -29,19 +49,21 @@ Resources:
               - 's3:PutObject'
             Resource:
               - !Sub 
-                - '${PREFIX}.${SUBDOMAIN}.${DOMAIN}'
-                - PREFIX: 'arn:aws:s3:::csye6225-webapp-codedeployment'
+                - '${PREFIX}${S3BucketName}.${SUBDOMAIN}.${DOMAIN}'
+                - PREFIX: 'arn:aws:s3:::'
+                  S3BUCKETNAME: !Ref S3BucketName
                   SUBDOMAIN: !If [UseProdCondition, 'dev', 'prod']
                   DOMAIN: !Ref Domain
               - !Sub 
-                - '${PREFIX}.${SUBDOMAIN}.${DOMAIN}/*'
-                - PREFIX: 'arn:aws:s3:::csye6225-webapp-codedeployment'
+                - '${PREFIX}${S3BucketName}.${SUBDOMAIN}.${DOMAIN}/*'
+                - PREFIX: 'arn:aws:s3:::'
+                  S3BUCKETNAME: !Ref S3BucketName
                   SUBDOMAIN: !If [UseProdCondition, 'dev', 'prod']
                   DOMAIN: !Ref Domain
       Roles: 
         - !Ref myGhCodeDeployServiceRole
       Users:
-        - ghactions-app
+        - !Ref UserName
   
   myGhCodeDeployPolicy:
     Type: AWS::IAM::Policy
@@ -55,13 +77,13 @@ Resources:
               - 'codedeploy:RegisterApplicationRevision'
               - 'codedeploy:GetApplicationRevision'
             Resource: 
-              - !Sub 'arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:application:csye6225-webapp'
+              - !Sub 'arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:application:${ApplicationName}'
           - Effect: Allow
             Action:
               - 'codedeploy:CreateDeployment'
               - 'codedeploy:GetDeployment'
             Resource: 
-              - '*'
+              - !Sub 'arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentgroup:${ApplicationName}/${DeployGroupName}'
           - Effect: Allow
             Action:
               - 'codedeploy:GetDeploymentConfig'
@@ -72,7 +94,7 @@ Resources:
       Roles: 
         - !Ref myGhCodeDeployServiceRole
       Users:
-        - ghactions-app
+        - !Ref UserName
 
   myGhCodeDeployServiceRole: 
     Type: AWS::IAM::Role
@@ -84,7 +106,42 @@ Resources:
           - Effect: "Allow"
             Principal: 
               Service: 
-                - !Sub "codedeploy.${AWS::Region}.amazonaws.com"
+                - !Sub "codedeploy.${AWS::Region}.${AWS::URLSuffix}"
+              AWS:
+                - !Ref AWS::AccountId
+            Action: 
+              - "sts:AssumeRole"
+      Path: "/"
+      Tags: 
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  myGhUploadToLambdaPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: GH-Upload-To-Lambda
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'lambda:UpdateFunctionCode'
+            Resource:
+              - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}'
+      Roles: 
+        - !Ref myGhUploadLambdaRole
+      Users:
+        - !Ref UserName
+
+  myGhUploadLambdaRole: 
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: GhUploadLambdaRole
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: "Allow"
+            Principal:
               AWS:
                 - !Ref AWS::AccountId
             Action: 
