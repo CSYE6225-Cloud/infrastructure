@@ -76,6 +76,10 @@ Parameters:
     Description: "Database class"
     Type: String
     Default: "db.t2.micro"
+  DbStorageType:
+    Description: "Database storage"
+    Type: String
+    Default: "gp2"
   DbStorage:
     Description: "Database storage"
     Type: String
@@ -100,6 +104,18 @@ Parameters:
     Description: "Auto scaling max"
     Type: String
     Default: "5"
+  lambdaFunctionHandler:
+    Description: "Lambda Function Handler"
+    Type: String
+    Default: "user-create-verification.lambda_handler"
+  dynamodbExpiredTime:
+    Description: "dynamodb expired time"
+    Type: String
+    Default: 5
+  CodedeployS3BucketName:
+    Description: "Codedeploy S3 Bucket Name"
+    Type: String
+    Default: "csye6225-webapp-codedeployment"
   
 Conditions:
   UseProdCondition:
@@ -305,6 +321,7 @@ Resources:
       DBInstanceIdentifier: !Ref DbName
       DBName: !Ref DbName
       DBInstanceClass: !Ref DbClass
+      StorageType: !Ref DbStorageType
       AllocatedStorage: !Ref DbStorage
       Engine: !Ref DbEngine
       EngineVersion: !Ref DbEngineVersion
@@ -359,7 +376,7 @@ Resources:
           - Effect: "Allow"
             Principal: 
               Service: 
-                - "ec2.amazonaws.com"
+                - !Sub "ec2.${AWS::URLSuffix}"
             Action: 
               - "sts:AssumeRole"
       Path: "/"
@@ -404,11 +421,46 @@ Resources:
               - 's3:List*'
             Resource:
               - !Sub 
-                - '${PREFIX}.${SUBDOMAIN}.${DOMAIN}/*'
-                - PREFIX: 'arn:aws:s3:::csye6225-webapp-codedeployment'
+                - '${PREFIX}${S3BUCKETNAME}.${SUBDOMAIN}.${DOMAIN}/*'
+                - PREFIX: 'arn:aws:s3:::'
+                  S3BUCKETNAME: !Ref CodedeployS3BucketName
                   SUBDOMAIN: !If [UseProdCondition, 'dev', 'prod']
                   DOMAIN: !Ref Domain
               - !Sub 'arn:aws:s3:::aws-codedeploy-${AWS::Region}/*'
+      Roles: 
+        - !Ref myWebAppCodeDeployS3Role
+
+  myWebAppDynamoDbPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: DynamoDB-EC2
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'dynamodb:PutItem'
+              - 'dynamodb:GetItem'
+              - 'dynamodb:UpdateItem'
+              - 'dynamodb:DeleteItem'
+            Resource:
+              - !GetAtt myDynamoDB.Arn
+              - !GetAtt myEmailTrackDynamoDB.Arn
+      Roles: 
+        - !Ref myWebAppCodeDeployS3Role
+
+  myWebAppSnsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: SNS-EC2
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'sns:Publish'
+            Resource:
+              - !Ref mySNSTopic
       Roles: 
         - !Ref myWebAppCodeDeployS3Role
 
@@ -429,7 +481,7 @@ Resources:
           - Effect: "Allow"
             Principal:
               Service:
-                - !Sub "codedeploy.${AWS::Region}.amazonaws.com"
+                - !Sub "codedeploy.${AWS::Region}.${AWS::URLSuffix}"
             Action:
               - "sts:AssumeRole"
       Path: "/"
@@ -500,6 +552,10 @@ Resources:
               server.port=8080
               aws.region=${AWS::Region}
               aws.bucket-name=${s3Bucket}
+              aws.dynamodb-table-name=${myDynamoDB}
+              aws.dynamodb-email-tracker-table-name=${myEmailTrackDynamoDB}
+              aws.topic-arn=${mySNSTopic}
+              aws.dynamodb-expired-time=${dynamodbExpiredTime}
               spring.sql.init.mode=always
               spring.sql.init.schema-locations=file:///usr/local/etc/schema.sql
               EOF
@@ -691,6 +747,156 @@ Resources:
           - DEPLOYMENT_FAILURE
       AutoScalingGroups:
         - !Ref asgWebApp
+
+  # DynamoDB
+  myDynamoDB:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: user-create-verification
+      AttributeDefinitions:
+        - AttributeName: "email"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "email"
+          KeyType: "HASH"
+      TimeToLiveSpecification:
+        AttributeName: "expire_at"
+        Enabled: True
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  myEmailTrackDynamoDB:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: user-email-track
+      AttributeDefinitions:
+        - AttributeName: "email"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "email"
+          KeyType: "HASH"
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  # SNS
+  mySNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Endpoint: !GetAtt myLambdaFunction.Arn
+          Protocol: "lambda"
+      TopicName: user-create-verification
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  # Lambda
+  myLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: user-create-verification
+      Runtime: python3.9
+      MemorySize: 128
+      Timeout: 25
+      Role: !GetAtt myLambdaFunctionRole.Arn
+      Handler: !Ref lambdaFunctionHandler
+      Environment:
+        Variables:
+          DOMAIN: !Join
+                    - '.'
+                    - - !If [UseProdCondition, 'dev', 'prod']
+                      - !Ref Domain
+          EMAIL_TRACKER_TABLE: !Ref myEmailTrackDynamoDB
+          EXPIRED_TIME: !Ref dynamodbExpiredTime
+      Code:
+        ZipFile: |
+          import boto3
+          def lambda_handler(event, context):
+            print("this is fake lambda function only used to create lambda function using cloudformation")
+
+  mySnsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt myLambdaFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: !Sub "sns.${AWS::URLSuffix}"
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Ref mySNSTopic
+  
+  myLambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LambdaFunctionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub "lambda.${AWS::URLSuffix}"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+  
+  myLambdaFunctionBasicExecutionPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: LambdaFunctionBasicExecutionPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'logs:CreateLogGroup'
+            Resource: 
+              - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+          - Effect: Allow
+            Action:
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Resource:
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${myLambdaFunction}:*'
+      Roles: 
+        - !Ref myLambdaFunctionRole
+    
+  myLambdaSesPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: LambdaSesPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'ses:SendEmail'
+            Resource:
+              - !Sub 
+                - 'arn:aws:ses:${REGION}:${ACCOUNT_ID}:identity/${SUBDOMAIN}.${DOMAIN}'
+                - REGION: !Ref AWS::Region
+                  ACCOUNT_ID: !Ref AWS::AccountId
+                  SUBDOMAIN: !If [UseProdCondition, 'dev', 'prod']
+                  DOMAIN: !Ref Domain
+          - Effect: Allow
+            Action:
+              - 'dynamodb:GetItem'
+              - 'dynamodb:PutItem'
+            Resource:
+              - !GetAtt myEmailTrackDynamoDB.Arn
+      Roles: 
+        - !Ref myLambdaFunctionRole
 
 Outputs:
   VpcId:
