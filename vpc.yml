@@ -116,6 +116,13 @@ Parameters:
     Description: "Codedeploy S3 Bucket Name"
     Type: String
     Default: "csye6225-webapp-codedeployment"
+  CertArn:
+    Description: "SSL Certification Arn"
+    Type: String
+  StorePassword:
+    Description: "SSL Certification Arn"
+    Type: String
+    Default: "Csye6225"
   
 Conditions:
   UseProdCondition:
@@ -299,6 +306,8 @@ Resources:
     Properties:
       Description: MySQL for CSYE6225
       Family: mysql8.0
+      Parameters:
+        performance_schema: 1
       Tags:
         - Key: Name
           Value: !Ref AWS::StackName
@@ -322,6 +331,8 @@ Resources:
       DBName: !Ref DbName
       DBInstanceClass: !Ref DbClass
       StorageType: !Ref DbStorageType
+      StorageEncrypted: true
+      KmsKeyId: !GetAtt myRdsKmsKey.KeyId
       AllocatedStorage: !Ref DbStorage
       Engine: !Ref DbEngine
       EngineVersion: !Ref DbEngineVersion
@@ -529,6 +540,8 @@ Resources:
               VolumeType: "gp2"
               DeleteOnTermination: true
               VolumeSize: 20
+              Encrypted: true
+              KmsKeyId: !GetAtt myEbsKmsKey.KeyId
         InstanceType: t2.micro
         DisableApiTermination: true
         IamInstanceProfile: 
@@ -539,10 +552,12 @@ Resources:
               #!/bin/bash
               yum update -y
 
+              systemctl stop webapp
+
               # config properties
               cat << EOF > /usr/local/etc/application.properties
               spring.jpa.hibernate.ddl-auto=none
-              spring.datasource.url=jdbc:mysql://${myDb.Endpoint.Address}:3306/CSYE6225
+              spring.datasource.url=jdbc:mysql://${myDb.Endpoint.Address}:3306/CSYE6225?sslMode=VERIFY_IDENTITY&trustCertificateKeyStoreUrl=file:/usr/local/etc/rds.keystore&trustCertificateKeyStorePassword=${StorePassword}
               spring.datasource.username=${DbUsername}
               spring.datasource.password=${DbPassword}
               spring.datasource.driver-class-name=com.mysql.jdbc.Driver
@@ -559,6 +574,13 @@ Resources:
               spring.sql.init.mode=always
               spring.sql.init.schema-locations=file:///usr/local/etc/schema.sql
               EOF
+
+              wget https://truststore.pki.rds.amazonaws.com/${AWS::Region}/${AWS::Region}-bundle.pem
+              keytool -import -file ${AWS::Region}-bundle.pem -alias ${AWS::Region} -storepass ${StorePassword} -keystore rds.keystore -noprompt
+              chmod 500 rds.keystore
+              chown webapp:webapp rds.keystore
+              mv rds.keystore /usr/local/etc/
+
               chown webapp:webapp /usr/local/etc/application.properties
               chmod 644 /usr/local/etc/application.properties
 
@@ -695,8 +717,10 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref loadBalancerTargetGroup
       LoadBalancerArn: !Ref loadBalancer
-      Port: 80
-      Protocol: HTTP
+      Port: 443
+      Protocol: HTTPS
+      Certificates: 
+        - CertificateArn: !Ref CertArn
 
   myLoadBalancerDnsRecord:
     Type: AWS::Route53::RecordSet
@@ -897,6 +921,74 @@ Resources:
               - !GetAtt myEmailTrackDynamoDB.Arn
       Roles: 
         - !Ref myLambdaFunctionRole
+  
+  myEbsKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Kms for Ebs
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: EBS-KMS-KEY
+        Statement:
+          - Sid: "Admin"
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action:
+              - "kms:*"
+            Resource: '*'
+          - Sid: "Allow service-linked role use of the customer managed key"
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling'
+            Action:
+              - "kms:Encrypt"
+              - "kms:Decrypt"
+              - "kms:GenerateDataKey*"
+              - "kms:ReEncrypt*"
+              - "kms:DescribeKey"
+            Resource: '*'
+          - Sid: "Allow attachment of persistent resources"
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling'
+            Action:
+              - "kms:CreateGrant"
+            Resource: '*'
+      Tags: 
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Ebs'
+  
+  myRdsKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Kms for Rds
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: RDS-KMS-KEY
+        Statement:
+          - Sid: "Admin"
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action:
+              - "kms:*"
+            Resource: '*'
+          - Sid: "Allow service-linked role use of the customer managed key"
+            Effect: Allow
+            Principal:
+              AWS: 
+                # - !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling'
+                - !GetAtt myWebAppCodeDeployS3Role.Arn
+            Action:
+              - "kms:GenerateDataKey"
+              - "kms:Decrypt"
+            Resource: '*'
+      Tags: 
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Rds'
 
 Outputs:
   VpcId:

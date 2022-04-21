@@ -24,6 +24,14 @@ Show AZ available to you account
 
 `aws ec2 describe-availability-zones --region us-west-2`
 
+
+## import SSL certificate
+```bash
+aws acm import-certificate --certificate fileb://cert.pem \
+   --certificate-chain fileb://fullchain.pem \
+   --private-key fileb://privkey.pem 
+```
+
 ## clean up:
 
 > Need to disable termination protection first!
